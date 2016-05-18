@@ -169,17 +169,21 @@ private:
     Compass compass;
     AP_InertialSensor ins;
 
-#if CONFIG_SONAR == ENABLED
-    RangeFinder sonar {serial_manager};
-    bool sonar_enabled; // enable user switch for sonar
-#endif
+    RangeFinder rangefinder {serial_manager};
+    struct {
+        bool enabled:1;
+        bool alt_healthy:1; // true if we can trust the altitude from the rangefinder
+        int16_t alt_cm;     // tilt compensated altitude (in cm) from rangefinder
+        uint32_t last_healthy_ms;
+        LowPassFilterFloat alt_cm_filt; // altitude filter
+    } rangefinder_state = { false, false, 0, 0 };
 
     AP_RPM rpm_sensor;
 
     // Inertial Navigation EKF
-    NavEKF EKF{&ahrs, barometer, sonar};
-    NavEKF2 EKF2{&ahrs, barometer, sonar};
-    AP_AHRS_NavEKF ahrs{ins, barometer, gps, sonar, EKF, EKF2, AP_AHRS_NavEKF::FLAG_ALWAYS_USE_EKF};
+    NavEKF EKF{&ahrs, barometer, rangefinder};
+    NavEKF2 EKF2{&ahrs, barometer, rangefinder};
+    AP_AHRS_NavEKF ahrs{ins, barometer, gps, rangefinder, EKF, EKF2, AP_AHRS_NavEKF::FLAG_ALWAYS_USE_EKF};
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     SITL::SITL sitl;
@@ -399,10 +403,7 @@ private:
     // Altitude
     // The cm/s we are moving up or down based on filtered data - Positive = UP
     int16_t climb_rate;
-    // The altitude as reported by Sonar in cm - Values are 20 to 700 generally.
-    int16_t sonar_alt;
-    uint8_t sonar_alt_health;    // true if we can trust the altitude from the sonar
-    float target_sonar_alt;      // desired altitude in cm above the ground
+    float target_rangefinder_alt;   // desired altitude in cm above the ground
     int32_t baro_alt;            // barometer altitude in cm above home
     float baro_climbrate;        // barometer climbrate in cm/s
     LowPassFilterVector3f land_accel_ef_filter; // accelerations for land and crash detector tests
@@ -906,7 +907,7 @@ private:
     void pre_arm_rc_checks();
     bool pre_arm_gps_checks(bool display_failure);
     bool pre_arm_ekf_attitude_check();
-    bool pre_arm_terrain_check();
+    bool pre_arm_terrain_check(bool display_failure);
     bool arm_checks(bool display_failure, bool arming_from_gcs);
     void init_disarm_motors();
     void motors_output();
@@ -941,8 +942,9 @@ private:
     void radio_passthrough_to_motors();
     void init_barometer(bool full_calibration);
     void read_barometer(void);
-    void init_sonar(void);
-    int16_t read_sonar(void);
+    void init_rangefinder(void);
+    void read_rangefinder(void);
+    bool rangefinder_alt_ok();
     void init_compass();
     void init_optflow();
     void update_optical_flow(void);
@@ -1069,7 +1071,7 @@ public:
     int8_t test_optflow(uint8_t argc, const Menu::arg *argv);
     int8_t test_relay(uint8_t argc, const Menu::arg *argv);
     int8_t test_shell(uint8_t argc, const Menu::arg *argv);
-    int8_t test_sonar(uint8_t argc, const Menu::arg *argv);
+    int8_t test_rangefinder(uint8_t argc, const Menu::arg *argv);
 
     int8_t reboot_board(uint8_t argc, const Menu::arg *argv);
 };
